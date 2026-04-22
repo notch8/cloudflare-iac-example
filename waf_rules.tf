@@ -117,7 +117,7 @@ resource "cloudflare_ruleset" "waf_custom_rules" {
   # cannot. This is the single highest-leverage rule for expensive catalog
   # traffic — pagination and facets.
   #
-  # Rules 1–2 ensure Site24x7, OAI-PMH, and quiet paths are not caught. We
+  # Rules 1-2 ensure Site24x7, OAI-PMH, and quiet paths are not caught. We
   # also exclude /catalog/.../iiif_search: UV makes background fetches that
   # cannot complete an interactive challenge.
   rules {
