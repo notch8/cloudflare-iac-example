@@ -1,10 +1,16 @@
-# ── Custom hostname management ──────────────────────────────────────
-# For SaaS / SSL for SaaS: external domains CNAME to your zone with
-# certificates from Cloudflare. Data in custom_hostnames.tfvars; only
-# zones with manage_custom_hostnames = true in main.tfvars are included.
+# ════════════════════════════════════════════════════════════════════════════
 #
-# Import existing hostnames before first apply, e.g.:
-#   tofu import 'cloudflare_custom_hostname.hostname["<zone-key>:<hostname>"]' '<zone_id>/<id>'
+#   NOTCH8   ·   OpenTofu   ·   Cloudflare
+#
+#   Custom hostnames (SSL for SaaS)
+#   `custom_hostnames.tfvars` + `manage_custom_hostnames = true`
+#
+# ════════════════════════════════════════════════════════════════════════════
+#
+#   External domains CNAME to your zone; Cloudflare issues and renews certs.
+#   Import before first apply:
+#   tofu import 'cloudflare_custom_hostname.hostname["<zone>:<host>"]' '<zid>/<id>'
+#
 
 resource "cloudflare_custom_hostname_fallback_origin" "fallback" {
   for_each = {

@@ -1,4 +1,10 @@
-# See ../example-account-1/custom_hostnames.tfvars for usage.
+# ════════════════════════════════════════════════════════════════════════════
+#
+#   NOTCH8   ·   Cloudflare example
+#
+#   example-account-2  ·  custom_hostnames.tfvars
+#
+# ════════════════════════════════════════════════════════════════════════════
 
 custom_hostname_fallback_origins = {}
 custom_hostnames                 = {}

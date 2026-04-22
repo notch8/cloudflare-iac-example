@@ -1,9 +1,15 @@
-# ── DNS record management ───────────────────────────────────────────
-# Populated from envs/<account>/dns.tfvars. Only created for zones
-# with manage_dns = true in main.tfvars.
+# ════════════════════════════════════════════════════════════════════════════
 #
-# Import existing records before first apply, e.g.:
-#   tofu import 'cloudflare_record.dns["<zone-key>:<record-name>"]' <zone_id>/<record_id>
+#   NOTCH8   ·   OpenTofu   ·   Cloudflare
+#
+#   DNS records
+#   `dns.tfvars` + `manage_dns = true` per zone
+#
+# ════════════════════════════════════════════════════════════════════════════
+#
+#   Import before first apply for existing records, e.g.:
+#   tofu import 'cloudflare_record.dns["<zone-key>:<name>"]' <zone_id>/<record_id>
+#
 
 locals {
   all_dns_records = merge([

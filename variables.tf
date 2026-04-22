@@ -1,18 +1,16 @@
-# ── Variables ───────────────────────────────────────────────────────
+# ════════════════════════════════════════════════════════════════════════════
 #
-# The `zones` map is the single source of truth for which Cloudflare
-# zones get protection and how aggressive each one is. Adding a new
-# zone is one tfvars entry + one `tofu apply`.
+#   NOTCH8   ·   OpenTofu   ·   Cloudflare
 #
-# DNS and custom hostnames live in separate `dns.tfvars` and
-# `custom_hostnames.tfvars` files (see `envs/`) to keep `main.tfvars`
-# focused on WAF, cache, and bot settings.
+#   Variables
+#   Schema for `zones`, optional DNS, and custom hostnames (split tfvars in envs/).
 #
-# Every feature is opt-out (defaults to true) for WAF, rate limit, and
-# bot — a bare minimum zone definition just needs `zone_id` and
-# `host_filter`. DNS and custom hostnames are off until you set
-# `manage_dns` / `manage_custom_hostnames` and add records in the
-# matching tfvars.
+# ════════════════════════════════════════════════════════════════════════════
+#
+#   `zones` is the main map: one entry per protected zone, keyed by a short
+#   stable name. WAF, rate limit, and bot are opt-out (default on). DNS and
+#   custom hostnames are opt-in per zone via `manage_*` flags.
+#
 
 variable "cloudflare_api_token" {
   description = "Cloudflare API token with Zone, WAF, Rulesets, Bot Management, and (if used) DNS / SSL Custom Hostname edit permissions."
@@ -30,19 +28,23 @@ variable "account_id" {
   type        = string
 }
 
+# ------------------------------------------------------------------------------
+#  Zone map — WAF, cache, rate limit, bot, opt-in DNS / SaaS hostnames
+# ------------------------------------------------------------------------------
+
 variable "zones" {
   description = "Map of Cloudflare zones to protect, keyed by a stable short name."
   type = map(object({
     # Required
     zone_id     = string
-    host_filter = string # e.g. "example.com" — used to scope block rules to tenant hosts
+    host_filter = string # e.g. "example.com" — scoping for block + challenge rules
 
-    # Feature toggles (WAF, rate, bot default to true; cache rules default to true)
+    # Feature toggles (WAF, rate, bot default true; cache rules default true)
     waf_custom_rules_enabled   = optional(bool, true)
     rate_limit_catalog_enabled = optional(bool, true)
-    bot_fight_mode               = optional(bool, true)
-    site24x7_bot_skip            = optional(bool, true)
-    cache_rules                  = optional(bool, true)
+    bot_fight_mode             = optional(bool, true)
+    site24x7_bot_skip          = optional(bool, true)
+    cache_rules                = optional(bool, true)
 
     # Rate-limit tuning per zone
     rate_limit_catalog = optional(object({
@@ -51,43 +53,43 @@ variable "zones" {
       block_duration      = optional(number, 10)
     }), {})
 
-    # Hostnames: `extra_hosts` and `extra_cache_hosts` are merged (de-duplicated)
-    # for the /catalog WAF rule and for per-host static cache rules. Use
-    # `extra_cache_hosts` when you only need caching, not the challenge.
+    # Hostnames: merged (de-duplicated) for WAF /catalog + per-host static cache
     extra_hosts       = optional(list(string), [])
     extra_cache_hosts = optional(list(string), [])
-    extra_cache_paths   = optional(list(string), [])
-    extra_skip_paths    = optional(list(string), [])
+    extra_cache_paths = optional(list(string), [])
+    extra_skip_paths  = optional(list(string), [])
 
     cache_edge_ttl_hours  = optional(number, 2)
     cache_browser_ttl_min = optional(number, 30)
 
     homepage_cache_hosts = optional(list(string), [])
 
-    homepage_cache_edge_ttl   = optional(number, 3600)
+    homepage_cache_edge_ttl    = optional(number, 3600)
     homepage_cache_browser_ttl = optional(number, 300)
 
     cache_dynamic_pages = optional(bool, false)
 
-    dynamic_cache_edge_ttl   = optional(number, 1800)
+    dynamic_cache_edge_ttl    = optional(number, 1800)
     dynamic_cache_browser_ttl = optional(number, 300)
-    catalog_cache_edge_ttl   = optional(number, 600)
+    catalog_cache_edge_ttl    = optional(number, 600)
     catalog_cache_browser_ttl = optional(number, 120)
 
     validate_hosts = optional(list(string), [])
 
-    # SAFETY: enable DNS / custom hostname resources only per zone
-    manage_dns                 = optional(bool, false)
-    manage_custom_hostnames   = optional(bool, false)
+    # SAFETY: enable only when ready (imports, fallbacks, etc.)
+    manage_dns              = optional(bool, false)
+    manage_custom_hostnames = optional(bool, false)
   }))
 }
 
-# ── DNS records (optional; see envs/<account>/dns.tfvars) ───────────
+# ------------------------------------------------------------------------------
+#  DNS — `envs/<account>/dns.tfvars`
+# ------------------------------------------------------------------------------
 
 variable "dns_records" {
-  description = "DNS records organized by zone key (must match a key in `var.zones`)"
+  description = "DNS records organized by zone key (must match a key in `var.zones`)."
   type = list(object({
-    zone    = string
+    zone = string
     records = list(object({
       name    = string
       type    = string
@@ -109,7 +111,9 @@ variable "dns_records" {
   }
 }
 
-# ── Custom hostnames (optional; see custom_hostnames.tfvars) ────────
+# ------------------------------------------------------------------------------
+#  Custom hostnames — `custom_hostnames.tfvars`
+# ------------------------------------------------------------------------------
 
 variable "custom_hostname_fallback_origins" {
   description = "Fallback origin per zone for custom hostnames. Only applied to zones with manage_custom_hostnames = true."

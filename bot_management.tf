@@ -1,12 +1,15 @@
-# ── Bot Fight Mode ──────────────────────────────────────────────────
+# ════════════════════════════════════════════════════════════════════════════
 #
-# Enables Cloudflare's built-in behavioral bot detection. Available on
-# the Free plan. Catches scrapers by behavior (request patterns, TLS
-# fingerprints, JS execution) rather than user-agent string — which
-# is the right call, because UA strings are trivially spoofed.
+#   NOTCH8   ·   OpenTofu   ·   Cloudflare
 #
-# The `enable_js` flag injects Cloudflare's JS challenge into pages
-# served to suspected bots; real browsers solve it transparently.
+#   Bot Fight Mode
+#   Behavioral detection (TLS, patterns, JS) — not user-agent string matching
+#
+# ════════════════════════════════════════════════════════════════════════════
+#
+#   Free tier. `enable_js` serves a challenge to suspected bots; real browsers
+#   complete it without friction.
+#
 
 resource "cloudflare_bot_management" "bot_fight_mode" {
   for_each = { for k, v in var.zones : k => v if v.bot_fight_mode }
