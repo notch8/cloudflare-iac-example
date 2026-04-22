@@ -6,8 +6,9 @@ digital-repository platforms stable under AI-scraper traffic.
 
 This repo is the public companion to the *"From Whack-a-Mole to Edge Protection"* talk at
 the [Lyrasis AI Discussions WG Solutions Showcase](https://wiki.lyrasis.org/display/cmtygp/Solutions+Showcase+Series).
-It is intentionally a **teaching example** — it contains the three rule patterns we think
-are load-bearing, not the full production module.
+It is intentionally a **teaching example** — it mirrors the same patterns as the
+in-house `notch8-ops` module (WAF, rate limit, bot, cache, opt-in DNS / custom hostnames)
+without production-specific automation.
 
 > [!NOTE]
 > Written by the DevOps & Infrastructure team at [Notch8](https://www.notch8.com/).
@@ -15,29 +16,21 @@ are load-bearing, not the full production module.
 
 ## What this shows
 
-Three Cloudflare rulesets, all available on the **free tier**, wired together behind a
-single OpenTofu module:
+Cloudflare **free tier**–compatible rules, wired in one root module, aligned with
+Notch8’s `terraform/cloudflare` layout:
 
-1. **WAF custom rules** (`waf_rules.tf`)
-   - *Skip* rule — allow-list Site24x7 monitoring + OAI-PMH harvesters so legitimate
-     traffic is never challenged
-   - *Block* rule — drop `xmlrpc.php` probes before they reach origin
-   - *Managed Challenge* rule — challenge `/catalog` requests; real browsers solve it
-     transparently, headless scrapers cannot
-2. **Rate limiting** (`rate_limiting.tf`)
-   - Blocks IPs exceeding 10 req / 10s on `/catalog`, keyed by Cloudflare colo + IP so
-     distributed scrapers get caught faster than pure per-IP limits
+1. **WAF** (`waf_rules.tf`) — allow-list (Site24x7, OAI-PMH, static paths, OAI, SAML
+   metadata), block WordPress probes, managed challenge on `/catalog` (IIIF OCR
+   search carve-out)
+2. **Rate limiting** (`rate_limiting.tf`) — `/catalog`, colo + IP
 3. **Bot Fight Mode** (`bot_management.tf`)
-   - Cloudflare's built-in behavioral bot detection — catches scrapers by behavior
-     rather than user-agent strings (which are trivially spoofed)
+4. **Cache rules** (`cache_rules.tf`) — static assets, optional homepages, optional
+   `cache_dynamic_pages` for Hyku-style paths
+5. **DNS** (`dns_records.tf`) and **custom hostnames** (`custom_hostnames.tf`) — opt-in
+   per zone, with data in `dns.tfvars` / `custom_hostnames.tfvars` under `envs/`
 
-## What this deliberately does *not* show
-
-The full production module at Notch8 also includes tiered caching (static / homepage /
-opt-in zone-wide dynamic), DNS-record management, multi-account workspace isolation, and
-per-tenant opt-outs. Those patterns are valuable but harder to grok in one sitting — we
-pulled them out of this example to keep the teaching value high. Happy to talk through
-them in Q&A or a follow-up.
+Workspace isolation, CI wrappers, and 1Password integration stay in the private ops
+repo — this example is only the Terraform root module and env tfvars.
 
 ## Architecture
 
@@ -58,15 +51,24 @@ one noisy tenant no longer degrades everyone else.
 
 ```
 .
-├── providers.tf          Cloudflare provider + S3 state backend
-├── variables.tf          Per-zone configuration schema
-├── waf_rules.tf          Skip / Block / Challenge rules
-├── rate_limiting.tf      /catalog rate limiting
-├── bot_management.tf     Bot Fight Mode toggle
-├── outputs.tf            Per-zone summary of applied rules
+├── providers.tf
+├── variables.tf
+├── waf_rules.tf
+├── rate_limiting.tf
+├── bot_management.tf
+├── cache_rules.tf
+├── dns_records.tf
+├── custom_hostnames.tf
+├── outputs.tf
 └── envs/
-    └── example-account/
-        └── main.tfvars   Example account + zone configuration (FAKE IDs)
+    ├── example-account-1/
+    │   ├── main.tfvars
+    │   ├── dns.tfvars
+    │   └── custom_hostnames.tfvars
+    └── example-account-2/
+        ├── main.tfvars
+        ├── dns.tfvars
+        └── custom_hostnames.tfvars
 ```
 
 ## Quick start
@@ -78,8 +80,8 @@ one noisy tenant no longer degrades everyone else.
 
 2. **Create a scoped Cloudflare API token**
 
-   Cloudflare Dashboard → Profile → API Tokens → *Create Token*, with these zone-level
-   permissions:
+   Cloudflare Dashboard → Profile → API Tokens → *Create Token*, with (at least) these
+   zone permissions for WAF + bot + cache:
 
    | Scope | Permission | Access |
    |-------|------------|--------|
@@ -88,21 +90,25 @@ one noisy tenant no longer degrades everyone else.
    | Zone  | Zone Settings   | Edit |
    | Zone  | Bot Management  | Edit |
 
+   If you use **managed DNS** or **custom hostnames**, add **DNS Edit** and **SSL and
+   Certificates (Custom hostnames)** as required by your workflow.
+
 3. **Copy and edit the example tfvars**
 
    ```bash
-   cp envs/example-account/main.tfvars envs/example-account/main.tfvars.local
-   # Replace the FAKE zone_id / account_id with your real values.
+   cp -r envs/example-account-1 envs/my-account
+   # Edit my-account/main.tfvars (and dns.tfvars / custom_hostnames.tfvars if needed)
    ```
 
-4. **Apply**
+4. **Apply** (load all three var-files so DNS and custom hostname defaults apply)
 
    ```bash
    export TF_VAR_cloudflare_api_token='your-api-token'
    tofu init
-   tofu workspace new example-account
-   tofu plan  -var-file=envs/example-account/main.tfvars.local
-   tofu apply -var-file=envs/example-account/main.tfvars.local
+   tofu workspace new my-account
+   VARFILES="-var-file=envs/my-account/main.tfvars -var-file=envs/my-account/dns.tfvars -var-file=envs/my-account/custom_hostnames.tfvars"
+   tofu plan  $VARFILES
+   tofu apply $VARFILES
    ```
 
 ## Gotchas we learned the hard way

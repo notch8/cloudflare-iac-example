@@ -1,27 +1,52 @@
 # ── WAF Custom Rules ────────────────────────────────────────────────
 #
-# Creates a custom ruleset per zone with three kinds of rules:
+# Creates a custom ruleset per zone with four groups of rules:
 #
-#   1. Skip rules  — allow-list legitimate bots (Site24x7, OAI-PMH)
-#                    and quiet paths (RSS, Atom, OAI endpoint)
-#   2. Block rules — drop WordPress probe traffic before origin
-#   3. Managed Challenge — challenge /catalog so real browsers pass
-#                    but headless scrapers fail
+#   1. Skip rules (bots)  — allow-list legitimate bots (Site24x7, OAI-PMH)
+#                          so monitoring and harvesting are never challenged
+#   2. Skip rules (paths) — static asset paths, OAI, SAML metadata, feeds
+#                          (never challenged or rate-limited at the WAF)
+#   3. Block rules        — drop WordPress probe traffic before origin
+#   4. Managed challenge  — challenge /catalog so real browsers pass but
+#                          headless scrapers fail (IIIF OCR search is carved out)
 #
-# Rule order matters — Cloudflare evaluates rules top-to-bottom, so
-# the skip rules MUST come first. If a managed challenge rule is
-# evaluated before the allow-list, your OAI-PMH harvesters will break.
+# Rule order matters — Cloudflare evaluates rules top-to-bottom, so the skip
+# rules MUST come first. If a managed challenge is evaluated before the
+# allow-list, your OAI-PMH harvesters and feed readers will break.
 
 locals {
-  # Paths that should never be challenged or rate-limited:
-  # - /catalog/oai  — OAI-PMH harvesting endpoint
-  # - /catalog.atom, /catalog.rss — feeds
-  # Add more here as you discover them (SAML metadata, IIIF search, etc.)
-  skip_paths_expression = join(" or ", [
-    "(http.request.uri.path contains \"/catalog/oai\")",
-    "(http.request.uri.path eq \"/catalog.atom\")",
-    "(http.request.uri.path eq \"/catalog.rss\")",
-  ])
+  # Default static paths to skip (plus `extra_skip_paths` per zone in variables).
+  # These are merged with OAI-PMH endpoint, SAML metadata wildcard, and feed paths
+  # in `skip_expressions` — paths that should not be challenged or WAF-limited
+  # the same way as dynamic HTML. Add more in `extra_skip_paths` as you find them.
+  default_skip_paths = ["/images/", "/downloads/", "/system/", "/assets/", "/pdf.js/"]
+
+  # Hostnames that receive the /catalog managed challenge: apex + extra_hosts +
+  # extra_cache_hosts, de-duplicated. See the Rule 4 comment below.
+  waf_catalog_hosts = {
+    for k, v in var.zones : k => distinct(concat(
+      [v.host_filter],
+      v.extra_hosts,
+      v.extra_cache_hosts,
+    ))
+  }
+
+  # One expression per zone: (static prefixes) OR (OAI) OR (SAML) OR (feeds)
+  skip_expressions = {
+    for k, v in var.zones : k => join(" or ",
+      concat(
+        [for p in concat(local.default_skip_paths, v.extra_skip_paths) :
+          "(starts_with(http.request.uri.path, \"${p}\"))"
+        ],
+        [
+          "(http.request.uri.path contains \"/catalog/oai\")",
+          "(http.request.uri.path wildcard r\"/users/auth/saml/*/metadata\")",
+          "(http.request.uri.path eq \"/catalog.atom\")",
+          "(http.request.uri.path eq \"/catalog.rss\")"
+        ]
+      )
+    )
+  }
 }
 
 resource "cloudflare_ruleset" "waf_custom_rules" {
@@ -32,10 +57,10 @@ resource "cloudflare_ruleset" "waf_custom_rules" {
   kind    = "zone"
   phase   = "http_request_firewall_custom"
 
-  # ── Rule 1: Skip for monitoring + harvesting user-agents ───────────
+  # ── Rule 1: Skip for monitoring + harvesting user-agents ──────────
   # Site24x7 is our uptime monitor; OAI-PMH is the standard library
-  # metadata harvesting protocol. Both look like "bots" to a naive
-  # WAF because they are — just the ones we want.
+  # metadata harvesting protocol. Both look like "bots" to a naive WAF
+  # because they are — just the ones we want.
   dynamic "rules" {
     for_each = each.value.site24x7_bot_skip ? [1] : []
     content {
@@ -54,11 +79,13 @@ resource "cloudflare_ruleset" "waf_custom_rules" {
     }
   }
 
-  # ── Rule 2: Skip for quiet paths (feeds, OAI endpoint) ─────────────
+  # ── Rule 2: Skip for static assets, OAI, SAML metadata, and feeds ──
+  # The skip rules above (Rule 1) and this path-based skip must run before
+  # any challenge or block so feeds and OAI keep working.
   rules {
     action      = "skip"
-    expression  = local.skip_paths_expression
-    description = "Skip WAF for OAI endpoint and feed paths"
+    expression  = local.skip_expressions[each.key]
+    description = "Skip WAF for static paths, OAI, and SAML metadata"
     enabled     = true
     action_parameters {
       ruleset  = "current"
@@ -71,14 +98,13 @@ resource "cloudflare_ruleset" "waf_custom_rules" {
   }
 
   # ── Rule 3: Block WordPress probes ─────────────────────────────────
-  # xmlrpc.php is a legacy attack surface — block globally.
-  # wp-login / wp-admin / wp-cron are blocked on *tenant* hosts but
-  # allowed on the bare zone domain (in case you actually run a
-  # WordPress marketing site there).
+  # xmlrpc.php is a legacy attack surface — block globally. wp-login,
+  # wp-admin, wp-cron are blocked on *tenant* hosts but allowed on the
+  # bare zone domain (e.g. a marketing WordPress site on the apex).
   #
   # Note "contains" (not "eq") on xmlrpc.php — it catches both
-  # "/xmlrpc.php" and the double-slash variant "//xmlrpc.php"
-  # that some scanners probe.
+  # "/xmlrpc.php" and the double-slash variant "//xmlrpc.php" that some
+  # scanners probe.
   rules {
     action      = "block"
     expression  = "(http.request.uri.path contains \"xmlrpc.php\") or ((http.request.uri.path contains \"/wp-login.php\" or http.request.uri.path contains \"/wp-cron.php\" or http.request.uri.path contains \"/wp-admin\") and not (http.host eq \"${each.value.host_filter}\"))"
@@ -86,22 +112,22 @@ resource "cloudflare_ruleset" "waf_custom_rules" {
     enabled     = true
   }
 
-  # ── Rule 4: Managed Challenge on /catalog ──────────────────────────
-  # Real browsers solve the JS challenge transparently; headless
-  # scrapers cannot. This is the single highest-leverage rule in
-  # the whole ruleset — /catalog is the endpoint scrapers love
-  # because it walks your entire corpus via pagination and facets.
+  # ── Rule 4: Managed challenge on /catalog ──────────────────────────
+  # Real browsers solve the JS challenge transparently; headless scrapers
+  # cannot. This is the single highest-leverage rule for expensive catalog
+  # traffic — pagination and facets.
   #
-  # The skip rules above ensure Site24x7, OAI-PMH, and feeds aren't
-  # caught by this challenge.
+  # Rules 1–2 ensure Site24x7, OAI-PMH, and quiet paths are not caught. We
+  # also exclude /catalog/.../iiif_search: UV makes background fetches that
+  # cannot complete an interactive challenge.
   rules {
     action = "managed_challenge"
     expression = join(" or ",
-      [for host in concat([each.value.host_filter], each.value.extra_hosts) :
-        "(http.host contains \"${host}\" and http.request.uri.path contains \"/catalog\")"
+      [for host in local.waf_catalog_hosts[each.key] :
+        "(http.host contains \"${host}\" and http.request.uri.path contains \"/catalog\" and not (starts_with(http.request.uri.path, \"/catalog/\") and ends_with(http.request.uri.path, \"/iiif_search\")))"
       ]
     )
-    description = "Challenge /catalog requests to defeat headless scrapers"
+    description = "Challenge catalog requests except IIIF OCR search endpoint"
     enabled     = true
   }
 }

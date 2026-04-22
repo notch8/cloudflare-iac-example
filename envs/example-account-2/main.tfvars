@@ -35,12 +35,15 @@ zones = {
       block_duration      = 10
     }
 
-    # Additional hostnames sharing this zone. The /catalog managed
-    # challenge rule will apply to these too.
+    # Additional hostnames: merged into the /catalog WAF rule and
+    # per-host static cache rules.
     extra_hosts = [
       "digitalcollections.example-repository.org",
       "archive.example-repository.org",
     ]
+
+    manage_dns              = false
+    manage_custom_hostnames = false
   }
 
   # Add more zones here as you roll out protection.
