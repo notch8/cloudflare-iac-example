@@ -2,11 +2,15 @@
 
 # Notch8 · Cloudflare edge protection
 
-### OpenTofu · free tier · Hyku & Hyrax–ready
+### Cloudflare · free tier · Hyku & Hyrax-ready
+
+<a href="https://github.com/notch8/cloudflare-iac-example/releases/tag/fedora-showcase-april-2026" title="From Whack-a-Mole to Edge Protection — slides & resources">
+  <img src="https://github.com/notch8/cloudflare-iac-example/releases/download/fedora-showcase-april-2026/n8-from-whack-a-mole-to-edge-protection.png" alt="From Whack-a-Mole to Edge Protection — title slide" width="680" />
+</a>
 
 Public reference for the patterns we use to keep multi-tenant repository traffic stable under AI-driven scraping.
 
-[Notch8](https://www.notch8.com/) · [Hyku](https://hykucommons.org/) · [Hyrax](https://samvera.github.io/) · *From Whack-a-Mole to Edge Protection* (Lyrasis AI Discussions WG)
+[Notch8](https://www.notch8.com/) · [Hyku](https://hykucommons.org/) · [Hyrax](https://samvera.github.io/) · *From Whack-a-Mole to Edge Protection* — [Talk slides](https://github.com/notch8/cloudflare-iac-example/releases/tag/fedora-showcase-april-2026)
 
 </div>
 
@@ -14,6 +18,7 @@ Public reference for the patterns we use to keep multi-tenant repository traffic
 
 ## Contents
 
+- [Talk slides](#talk-slides)
 - [The problem](#the-problem-this-solves)
 - [Module contents](#module-contents)
 - [Architecture](#architecture)
@@ -21,6 +26,12 @@ Public reference for the patterns we use to keep multi-tenant repository traffic
 - [Quick start](#quick-start)
 - [Lessons from production](#lessons-from-production)
 - [License & contact](#license--contact)
+
+---
+
+## Talk slides
+
+**From Whack-a-Mole to Edge Protection.** The **[latest release: fedora-showcase-april-2026](https://github.com/notch8/cloudflare-iac-example/releases/tag/fedora-showcase-april-2026)** includes the presentation as a release asset. The banner above is the talk's title slide.
 
 ---
 
@@ -48,7 +59,7 @@ This module moves **filtering, challenge, and cache decisions to the edge** so o
 **Teaching scope:** this repo is the **Terraform root** and env tfvars. CI, workspaces-as-a-service, and secret workflows stay in our private ops repo.
 
 > [!NOTE]
-> **License:** MIT — copy and adapt. **Maintainer:** [Notch8](https://www.notch8.com/) Infrastructure & DevOps.
+> **License:** MIT — copy and adapt. **Maintainer:** [Notch8](https://www.notch8.com/) Infrastructure team.
 
 ---
 
@@ -156,7 +167,7 @@ tofu apply $VARFILES
 
 <div align="center">
 
-**Notch8** · Infrastructure & DevOps
+**Notch8** · Infrastructure
 
 *Libraries, archives, universities — and the platforms that serve them.*
 
