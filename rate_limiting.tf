@@ -1,11 +1,15 @@
-# ── Rate Limiting ───────────────────────────────────────────────────
+# ════════════════════════════════════════════════════════════════════════════
 #
-# Rate-limits /catalog requests to prevent bot-driven CPU/DB saturation.
-# Uses the Cloudflare Rulesets API (not the deprecated Rate Limiting API).
+#   NOTCH8   ·   OpenTofu   ·   Cloudflare
 #
-# Keyed by Cloudflare colo + source IP: if a distributed scraper rotates
-# through 200 IPs at one colo, they'll trip the limit at that colo faster
-# than a pure per-IP limit would catch them.
+#   Rate limiting — /catalog
+#   Rulesets API (not legacy Rate Limiting API)
+#
+# ════════════════════════════════════════════════════════════════════════════
+#
+#   Key: `cf.colo.id` + `ip.src` — distributed scrapers rotating many IPs at
+#   one edge still hit the limit at that colo faster than per-IP alone.
+#
 
 resource "cloudflare_ruleset" "rate_limiting" {
   for_each = { for k, v in var.zones : k => v if v.rate_limit_catalog_enabled }

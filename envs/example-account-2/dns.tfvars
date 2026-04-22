@@ -1,3 +1,9 @@
-# See ../example-account-1/dns.tfvars for usage.
+# ════════════════════════════════════════════════════════════════════════════
+#
+#   NOTCH8   ·   Cloudflare example
+#
+#   example-account-2  ·  dns.tfvars
+#
+# ════════════════════════════════════════════════════════════════════════════
 
 dns_records = []

@@ -1,28 +1,30 @@
-# ── WAF Custom Rules ────────────────────────────────────────────────
+# ════════════════════════════════════════════════════════════════════════════
 #
-# Creates a custom ruleset per zone with four groups of rules:
+#   NOTCH8   ·   OpenTofu   ·   Cloudflare
 #
-#   1. Skip rules (bots)  — allow-list legitimate bots (Site24x7, OAI-PMH)
-#                          so monitoring and harvesting are never challenged
-#   2. Skip rules (paths) — static asset paths, OAI, SAML metadata, feeds
-#                          (never challenged or rate-limited at the WAF)
-#   3. Block rules        — drop WordPress probe traffic before origin
-#   4. Managed challenge  — challenge /catalog so real browsers pass but
-#                          headless scrapers fail (IIIF OCR search is carved out)
+#   WAF — custom rulesets
+#   Skip (bots + paths) · block probes · managed challenge on /catalog
 #
-# Rule order matters — Cloudflare evaluates rules top-to-bottom, so the skip
-# rules MUST come first. If a managed challenge is evaluated before the
-# allow-list, your OAI-PMH harvesters and feed readers will break.
+# ════════════════════════════════════════════════════════════════════════════
+#
+#   Four groups per zone:
+#
+#     1. Skip — user-agents (Site24x7, OAI-PMH)
+#     2. Skip — paths (static, OAI, SAML, feeds)
+#     3. Block — WordPress / xmlrpc probes
+#     4. Challenge — /catalog (IIIF OCR search excluded)
+#
+#   Order is non-negotiable: Cloudflare evaluates top-to-bottom. Skips must run
+#   before challenge, or OAI-PMH and feeds break.
+#
 
 locals {
-  # Default static paths to skip (plus `extra_skip_paths` per zone in variables).
-  # These are merged with OAI-PMH endpoint, SAML metadata wildcard, and feed paths
-  # in `skip_expressions` — paths that should not be challenged or WAF-limited
-  # the same way as dynamic HTML. Add more in `extra_skip_paths` as you find them.
+  # Static path prefixes + per-zone `extra_skip_paths`; combined with OAI,
+  # SAML wildcard, and Atom/RSS in `skip_expressions`.
   default_skip_paths = ["/images/", "/downloads/", "/system/", "/assets/", "/pdf.js/"]
 
-  # Hostnames that receive the /catalog managed challenge: apex + extra_hosts +
-  # extra_cache_hosts, de-duplicated. See the Rule 4 comment below.
+  # Apex + `extra_hosts` + `extra_cache_hosts` (distinct) — who gets the
+  # /catalog managed challenge.
   waf_catalog_hosts = {
     for k, v in var.zones : k => distinct(concat(
       [v.host_filter],
@@ -31,7 +33,7 @@ locals {
     ))
   }
 
-  # One expression per zone: (static prefixes) OR (OAI) OR (SAML) OR (feeds)
+  # (static OR …) per zone
   skip_expressions = {
     for k, v in var.zones : k => join(" or ",
       concat(
@@ -57,10 +59,12 @@ resource "cloudflare_ruleset" "waf_custom_rules" {
   kind    = "zone"
   phase   = "http_request_firewall_custom"
 
-  # ── Rule 1: Skip for monitoring + harvesting user-agents ──────────
-  # Site24x7 is our uptime monitor; OAI-PMH is the standard library
-  # metadata harvesting protocol. Both look like "bots" to a naive WAF
-  # because they are — just the ones we want.
+  # --------------------------------------------------------------------------
+  #  Rule 1 — Skip: monitoring & harvesting user-agents
+  # --------------------------------------------------------------------------
+  #  Site24x7 = uptime; OAI-PMH = library metadata protocol. Both read as
+  #  "bots" to a naive WAF — we want them through.
+  #
   dynamic "rules" {
     for_each = each.value.site24x7_bot_skip ? [1] : []
     content {
@@ -79,9 +83,11 @@ resource "cloudflare_ruleset" "waf_custom_rules" {
     }
   }
 
-  # ── Rule 2: Skip for static assets, OAI, SAML metadata, and feeds ──
-  # The skip rules above (Rule 1) and this path-based skip must run before
-  # any challenge or block so feeds and OAI keep working.
+  # --------------------------------------------------------------------------
+  #  Rule 2 — Skip: static assets, OAI, SAML metadata, feeds
+  # --------------------------------------------------------------------------
+  #  Must precede any challenge or block so integrations and feeds keep working.
+  #
   rules {
     action      = "skip"
     expression  = local.skip_expressions[each.key]
@@ -97,14 +103,14 @@ resource "cloudflare_ruleset" "waf_custom_rules" {
     }
   }
 
-  # ── Rule 3: Block WordPress probes ─────────────────────────────────
-  # xmlrpc.php is a legacy attack surface — block globally. wp-login,
-  # wp-admin, wp-cron are blocked on *tenant* hosts but allowed on the
-  # bare zone domain (e.g. a marketing WordPress site on the apex).
+  # --------------------------------------------------------------------------
+  #  Rule 3 — Block: WordPress probes
+  # --------------------------------------------------------------------------
+  #  xmlrpc.php: block everywhere. wp-* : block on tenant hosts, allow on apex
+  #  if you run a marketing WP site on the bare zone name.
   #
-  # Note "contains" (not "eq") on xmlrpc.php — it catches both
-  # "/xmlrpc.php" and the double-slash variant "//xmlrpc.php" that some
-  # scanners probe.
+  #  Use `contains` on xmlrpc — catches `/xmlrpc.php` and `//xmlrpc.php` probes.
+  #
   rules {
     action      = "block"
     expression  = "(http.request.uri.path contains \"xmlrpc.php\") or ((http.request.uri.path contains \"/wp-login.php\" or http.request.uri.path contains \"/wp-cron.php\" or http.request.uri.path contains \"/wp-admin\") and not (http.host eq \"${each.value.host_filter}\"))"
@@ -112,14 +118,14 @@ resource "cloudflare_ruleset" "waf_custom_rules" {
     enabled     = true
   }
 
-  # ── Rule 4: Managed challenge on /catalog ──────────────────────────
-  # Real browsers solve the JS challenge transparently; headless scrapers
-  # cannot. This is the single highest-leverage rule for expensive catalog
-  # traffic — pagination and facets.
+  # --------------------------------------------------------------------------
+  #  Rule 4 — Managed challenge: /catalog
+  # --------------------------------------------------------------------------
+  #  Browsers pass; headless scrapers do not. High leverage on Solr-heavy traffic.
   #
-  # Rules 1-2 ensure Site24x7, OAI-PMH, and quiet paths are not caught. We
-  # also exclude /catalog/.../iiif_search: UV makes background fetches that
-  # cannot complete an interactive challenge.
+  #  Rules 1–2 keep harvesters and feeds out. `/…/iiif_search` is excluded — UV
+  #  issues background fetches that cannot complete an interactive challenge.
+  #
   rules {
     action = "managed_challenge"
     expression = join(" or ",

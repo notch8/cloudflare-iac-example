@@ -1,16 +1,19 @@
-# ── Cache Rules ─────────────────────────────────────────────────────
+# ════════════════════════════════════════════════════════════════════════════
 #
-# Three tiers of caching, all available on Cloudflare Free:
+#   NOTCH8   ·   OpenTofu   ·   Cloudflare
 #
-#   1. Static assets   — /images/, /assets/, /downloads/, etc. (2h edge TTL)
-#   2. Homepage         — exact "/" for listed tenants (1h edge TTL)
-#   3. Dynamic pages    — /concern/*, /catalog, / zone-wide (30min/10min edge TTL)
-#      Opt-in via cache_dynamic_pages = true in tfvars.
+#   Cache rules — static · optional homepages · opt-in “dynamic” tier
+#   Hyku / Hyrax: `_hyku_session` cookie keeps authenticated HTML off the edge
 #
-# Dynamic page caching uses the _hyku_session cookie to exclude authenticated HTML.
-# Static asset rules do not check cookies.
+# ════════════════════════════════════════════════════════════════════════════
 #
-# Cloudflare Free: 10 cache rules per zone (shared across these rule blocks per zone).
+#   Tiers (Free plan; 10 cache rules / zone shared across these blocks):
+#
+#     •  Static assets — default paths + `extra_cache_paths`
+#     •  Per-extra-host static — `extra_cache_hosts` ∪ `extra_hosts`
+#     •  Homepages — listed hosts, or zone-wide `/` when `cache_dynamic_pages`
+#     •  Dynamic (opt-in) — /concern/*, /collections/*, /catalog, facets…
+#
 
 locals {
   default_cache_paths = ["/images/", "/downloads/", "/system/", "/assets/", "/pdf.js/", "/uploads/"]
@@ -23,7 +26,6 @@ locals {
     )
   }
 
-  # Per-hostname static rules: `extra_cache_hosts` plus `extra_hosts` (de-duplicated)
   extra_cache_host_expressions = {
     for k, v in var.zones : k => {
       for host in distinct(concat(v.extra_cache_hosts, v.extra_hosts)) : host => join(" or ",
@@ -51,6 +53,9 @@ resource "cloudflare_ruleset" "cache_rules" {
   kind    = "zone"
   phase   = "http_request_cache_settings"
 
+  # --------------------------------------------------------------------------
+  #  Primary hostname — static paths
+  # --------------------------------------------------------------------------
   rules {
     action      = "set_cache_settings"
     expression  = local.cache_expressions[each.key]
@@ -70,6 +75,9 @@ resource "cloudflare_ruleset" "cache_rules" {
     }
   }
 
+  # --------------------------------------------------------------------------
+  #  Extra hostnames — same static path set
+  # --------------------------------------------------------------------------
   dynamic "rules" {
     for_each = local.extra_cache_host_expressions[each.key]
     content {
@@ -92,6 +100,9 @@ resource "cloudflare_ruleset" "cache_rules" {
     }
   }
 
+  # --------------------------------------------------------------------------
+  #  Homepages — listed hosts only (when not using zone-wide dynamic tier)
+  # --------------------------------------------------------------------------
   dynamic "rules" {
     for_each = (
       contains(keys(local.homepage_cache_expressions), each.key) &&
@@ -117,6 +128,9 @@ resource "cloudflare_ruleset" "cache_rules" {
     }
   }
 
+  # --------------------------------------------------------------------------
+  #  Dynamic tier — zone-wide `/` (opt-in)
+  # --------------------------------------------------------------------------
   dynamic "rules" {
     for_each = each.value.cache_dynamic_pages ? [1] : []
     content {
@@ -139,6 +153,9 @@ resource "cloudflare_ruleset" "cache_rules" {
     }
   }
 
+  # --------------------------------------------------------------------------
+  #  Dynamic tier — works + collections (opt-in)
+  # --------------------------------------------------------------------------
   dynamic "rules" {
     for_each = each.value.cache_dynamic_pages ? [1] : []
     content {
@@ -161,6 +178,9 @@ resource "cloudflare_ruleset" "cache_rules" {
     }
   }
 
+  # --------------------------------------------------------------------------
+  #  Dynamic tier — catalog + facets + feeds (opt-in)
+  # --------------------------------------------------------------------------
   dynamic "rules" {
     for_each = each.value.cache_dynamic_pages ? [1] : []
     content {
