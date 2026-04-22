@@ -10,7 +10,7 @@ It is intentionally a **teaching example** — it highlights the core patterns w
 to protect expensive endpoints and reduce origin load, without the full complexity of our internal modules.
 
 > [!NOTE]
-> Written by the DevOps & Infrastructure team at [Notch8](https://www.notch8.com/).
+> Written by the Infrastructure team at [Notch8](https://www.notch8.com/).
 > Released under the MIT license so you can copy, adapt, and share freely.
 
 ---
@@ -99,6 +99,7 @@ Shared cluster resources stay stable because one noisy tenant no longer degrades
 
 ## Repo layout
 
+```text
 .
 ├── providers.tf
 ├── variables.tf
@@ -118,6 +119,7 @@ Shared cluster resources stay stable because one noisy tenant no longer degrades
         ├── main.tfvars
         ├── dns.tfvars
         └── custom_hostnames.tfvars
+```
 
 ---
 
@@ -199,4 +201,4 @@ If you came here from a talk or discussion, we'd love to hear what's working (or
 
 ---
 
-Maintained by Notch8 — DevOps & Infrastructure team.
+Maintained by Notch8 — Infrastructure team.
